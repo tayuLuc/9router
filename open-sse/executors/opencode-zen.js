@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { isMuseSparkModel } from "../providers/models/helpers.js";
+import { isMuseSparkModel, isOpencodeFreeTierModel } from "../providers/models/helpers.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -21,6 +21,45 @@ const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv
 // Free-tier fingerprint (mirrors opencode executor, PR #4132): upstream 403s
 // requests without the file-search quartet and without stream:true.
 const OPENCODE_FINGERPRINT_TOOLS = ["bash", "glob", "grep", "read"];
+
+// Upstream validates the session id itself, not just its shape: the 12-hex
+// prefix must decode to a recent timestamp (~(now*0x1000+1), like the real
+// CLI mints). Hash-translated sessions (translateSessionId) carry no time and
+// answer 403 FreeTierError even with otherwise perfect attestation. Free-tier
+// models therefore need a stable TIME-based session per downstream identity —
+// stable because minting a fresh session per request burns free-tier quota
+// into 429 FreeUsageLimitError, mirroring the real CLI's one session per
+// conversation.
+const stableFreeTierSessions = new Map();
+const MAX_STABLE_FREE_TIER_SESSIONS = 1000;
+
+function freeTierIdentityKey(credentials) {
+  const connectionId = credentials?.connectionId || credentials?.id;
+  if (connectionId) return `opencode-zen:conn:${String(connectionId).slice(0, 128)}`;
+  const raw = credentials?.rawHeaders || {};
+  const auth = raw.authorization || raw.Authorization || raw["x-api-key"] || raw["X-Api-Key"] || "";
+  if (auth) {
+    const digest = crypto.createHash("sha256").update(String(auth)).digest("hex").slice(0, 32);
+    return `opencode-zen:auth:${digest}`;
+  }
+  return "opencode-zen:default";
+}
+
+export function stableFreeTierSessionId(credentials) {
+  const key = freeTierIdentityKey(credentials);
+  const existing = stableFreeTierSessions.get(key);
+  if (existing) {
+    stableFreeTierSessions.delete(key);
+    stableFreeTierSessions.set(key, existing);
+    return existing;
+  }
+  const sessionId = generateSessionId();
+  if (stableFreeTierSessions.size >= MAX_STABLE_FREE_TIER_SESSIONS) {
+    stableFreeTierSessions.delete(stableFreeTierSessions.keys().next().value);
+  }
+  stableFreeTierSessions.set(key, sessionId);
+  return sessionId;
+}
 
 function hasValidOpencodeVersion(ua) {
   const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
@@ -267,14 +306,24 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
     // Free-tier gate: spoof the official client UA.
     headers["User-Agent"] = hasValidOpencodeVersion(downstreamUa) ? downstreamUa : OPENCODE_UA;
     headers["x-opencode-client"] = lower["x-opencode-client"] || "desktop";
+    headers["x-opencode-project"] = lower["x-opencode-project"] || "global";
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
       headers[SESSION_HEADER] = prepared;
-      return headers;
+    } else {
+      const fallback = this.prepareRequestCredentials({ credentials });
+      headers[SESSION_HEADER] = fallback[SESSION_FIELD];
     }
-
-    const fallback = this.prepareRequestCredentials({ credentials });
-    headers[SESSION_HEADER] = fallback[SESSION_FIELD];
+    if (isOpencodeFreeTierModel(model)) {
+      // Free-tier models are gated behind the attested free-tier identity even
+      // on the keyed lane: a real oc_sk_* key answers 403 FreeTierError, while
+      // `Bearer public` + session/request ids succeed. Paid models keep the
+      // connection key untouched. The session must be time-based (see
+      // stableFreeTierSessionId): hash-translated sessions 403.
+      headers["Authorization"] = "Bearer public";
+      headers[SESSION_HEADER] = stableFreeTierSessionId(credentials);
+      headers["x-opencode-request"] = generateRequestId();
+    }
     return headers;
   }
 
