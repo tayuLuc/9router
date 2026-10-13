@@ -303,7 +303,12 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
   }
 
   const hinted = incoming || normalizeSession(providerSessionId);
-  if (hinted) return translateSessionId(hinted, clientTool);
+  // FIX #4787: preserve valid native OpenCode IDs — hash-translated ids
+  // (digest-derived time prefix) are rejected upstream with 403 FreeTierError.
+  if (hinted) {
+    if (OPENCODE_SESSION_RE.test(hinted)) return hinted;
+    return translateSessionId(hinted, clientTool);
+  }
 
   if (credentials?.connectionId || bodyHasSessionHints(body)) {
     let viaManager = null;
@@ -317,7 +322,11 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
     } catch {
       viaManager = null;
     }
-    if (viaManager) return translateSessionId(viaManager, clientTool);
+    // FIX #4787: same validation for sessionManager results
+    if (viaManager) {
+      if (OPENCODE_SESSION_RE.test(viaManager)) return viaManager;
+      return translateSessionId(viaManager, clientTool);
+    }
   }
 
   return stableSessionId(credentials);

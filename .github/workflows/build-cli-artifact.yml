@@ -1,0 +1,65 @@
+name: Build CLI and upload artifact
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing vX.Y.Z tag to publish"
+        required: true
+        type: string
+
+concurrency:
+  group: build-cli-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  build:
+    name: Build CLI package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write  # for uploading artifacts
+
+    steps:
+      - name: Check out release source at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install root dependencies (includes Next.js)
+        run: npm ci
+
+      - name: Build CLI
+        working-directory: ./cli
+        env:
+          NEXT_TRACING_ROOT_MODE: workspace
+        run: |
+          npm ci
+          npm run build
+
+      - name: Pack CLI
+        working-directory: ./cli
+        run: npm pack --pack-destination ..
+
+      - name: Upload CLI package as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 9router-cli-package
+          path: 9router-*.tgz
+          retention-days: 30
+
+      - name: Show package info
+        run: |
+          ls -la 9router-*.tgz
+          tar -tzf 9router-*.tgz | head -20
