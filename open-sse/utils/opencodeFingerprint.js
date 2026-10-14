@@ -112,14 +112,40 @@ export function concealFingerprintToolNames(tools) {
     }
 
     const current = toolNameOf(tool);
-    const key = fingerprintToolKey(current);
+    let key = fingerprintToolKey(current);
+    // Gate-rejected spellings (glob/grep) never travel to upstream: drop them.
+    if (key === "glob" || key === "grep") continue;
     if (!key) {
       out.push(tool);
       continue;
     }
 
-    // `Bash` + `bash` is rejected upstream as a duplicate. Keep exactly one
-    // declaration for each quartet member.
+    // PR4842 model: a caller tool whose name is a fingerprint member but whose
+    // definition differs from OpenCode's travels under an alias, and the
+    // canonical definition is appended instead. Same-definition duplicates are
+    // dropped.
+    const def = OPENCODE_CANONICAL_TOOL_DEFINITIONS[key];
+    if (def && isCanonicalDefinition(tool, key)) {
+      // Caller sent the canonical definition verbatim: keep it, suppress
+      // appendMissing (seenQuartet) so it never gets re-serialized.
+      if (seenQuartet.has(key)) continue;
+      seenQuartet.add(key);
+      out.push(tool);
+      continue;
+    }
+    if (def && !isFingerprintDefinition(tool, key)) {
+      if (seenQuartet.has(key)) continue;
+      seenQuartet.add(key);
+      let alias = `${key}_client`;
+      for (let i = 2; out.some((t) => toolNameOf(t) === alias); i += 1) alias = `${key}_client${i}`;
+      map.set(alias, current);
+      const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function)
+        ? tool.function
+        : null;
+      out.push(fn ? { ...tool, function: { ...fn, name: alias } } : { ...tool, name: alias });
+      continue;
+    }
+
     if (seenQuartet.has(key)) continue;
     seenQuartet.add(key);
 
@@ -134,6 +160,25 @@ export function concealFingerprintToolNames(tools) {
     }
   }
   return { tools: out, map };
+}
+
+/** Raw-JSON identity check (key order preserved) against the canonical def. */
+function isCanonicalDefinition(tool, key) {
+  const def = OPENCODE_CANONICAL_TOOL_DEFINITIONS[key];
+  if (!def) return false;
+  const fn = tool && tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : tool;
+  if (!fn) return false;
+  if (fn.description !== def.description) return false;
+  const want = { type: "object", properties: def.parameters.properties, required: def.parameters.required, additionalProperties: def.parameters.additionalProperties };
+  try { return JSON.stringify(fn.parameters) === JSON.stringify(want); } catch { return false; }
+}
+
+/** True when `tool` already carries OpenCode's exact definition for `key`. */
+function isFingerprintDefinition(tool, key) {
+  const def = OPENCODE_CANONICAL_TOOL_DEFINITIONS[key];
+  if (!def) return false;
+  const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : tool;
+  return !!fn && fn.description === def.description && JSON.stringify(fn.parameters) === JSON.stringify(def.parameters);
 }
 
 /**
@@ -210,6 +255,24 @@ export function applyFingerprintTools(body, flat) {
 
   const hadClientTools = Array.isArray(body.tools) && body.tools.length > 0;
   const { tools, map } = concealFingerprintToolNames(body.tools);
+  // PR4842: when the caller already carries an exact canonical definition under
+  // an alias name (read_client/shell_client), reuse it verbatim instead of
+  // appending a second copy.
+  for (const name of OPENCODE_FINGERPRINT_TOOLS) {
+    if (Array.isArray(tools) && !tools.some((t) => fingerprintToolKey(toolNameOf(t)) === name)) {
+      for (const alias of [`${name}_client`, `${name}_client2`, `${name}_client3`]) {
+        const t = tools.find((x) => toolNameOf(x) === alias);
+        const fn = t && (t.function && typeof t.function === "object" ? t.function : t);
+        if (fn && fn.description === OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].description
+          && JSON.stringify(fn.parameters) === JSON.stringify(OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].parameters)) {
+          tools.splice(tools.indexOf(t), 1, flat
+            ? { type: "function", name, description: fn.description, parameters: fn.parameters }
+            : { type: "function", function: { name, description: fn.description, parameters: fn.parameters } });
+          break;
+        }
+      }
+    }
+  }
   body.tools = appendMissingFingerprintTools(tools, flat);
   retargetToolChoice(body, map);
 
