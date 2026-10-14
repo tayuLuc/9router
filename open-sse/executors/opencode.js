@@ -31,7 +31,11 @@ function hasValidOpencodeVersion(ua) {
   const str = String(ua || "");
   // v1 form opencode/<semver> or v2 form opencode/<channel>/<version>/<client>
   if (!/opencode\/(?:latest|stable|preview|dev|\d+)/i.test(str)) return false;
-  const m = str.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+  // v2 = opencode/<channel>/<version>/<client>; v1 floor = opencode/<semver> >= 1.17.
+  // v1 may carry the real client's trailing " ai-sdk/… runtime/bun/…" suffix (#4806).
+  const v2 = str.match(/^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i);
+  if (v2) return parseInt(v2[1], 10) >= 2;
+  const m = str.match(/^opencode\/(\d+)\.(\d+)(?:\.(\d+))?(?:\s+\S.*)?$/i);
   if (!m) return false;
   const major = parseInt(m[1], 10);
   const minor = parseInt(m[2], 10);
