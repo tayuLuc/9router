@@ -517,6 +517,8 @@ export class OpenCodeExecutor extends BaseExecutor {
 
     const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
     const downstreamReq = normalizeRequestId(lower["x-opencode-request"]);
+    // v2 CLI sends no x-opencode-request at all (inference worker does not check
+    // it); pass through only a client-supplied canonical msg_ id.
     const requestId = credentials?.[REQ_FIELD] || downstreamReq || null;
     const auth = credentials?.apiKey ? `Bearer ${credentials.apiKey}` : "Bearer public";
 
