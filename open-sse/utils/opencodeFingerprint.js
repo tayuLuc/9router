@@ -1,20 +1,55 @@
 /**
  * Helpers for the OpenCode Zen free-tier client fingerprint.
  *
- * OpenCode's free-tier request fingerprint uses the lowercase bash/read tools.
- * Agent clients may declare these with different casing, so case variants are
- * canonicalized instead of duplicated. The response side restores caller names.
+ * Live upstream probes show that free-tier requests must include the lowercase
+ * file-search quartet (bash/glob/grep/read). Agent clients such as Claude Code
+ * may declare the same tools with different casing, so those case variants must
+ * be renamed instead of duplicated. The response side restores the caller's
+ * original spelling so downstream clients still recognise their own tool calls.
  */
 
-/** Canonical tool names required by the upstream free-tier gate. */
-export const OPENCODE_FINGERPRINT_TOOLS = ["bash", "read"];
+/** Canonical names required by the upstream free-tier gate. */
+export const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
+
+export const OPENCODE_CANONICAL_TOOL_DEFINITIONS = {
+  "read": {
+    "description": "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "File or directory to read"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  "shell": {
+    "description": "Execute a shell command and return its output. Commands run on Windows using pwsh. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Shell command string to execute"
+        }
+      },
+      "required": [
+        "command"
+      ]
+    }
+  }
+};
 
 // Request body -> names renamed for that request. transformRequest() mutates the
 // same body object that chatCore passed into the executor, so a WeakMap keeps the
 // mapping request-local without putting transport metadata on the wire.
 const renamedToolNames = new WeakMap();
 
-/** Canonical lowercase name when `name` is a fingerprint member; "" otherwise. */
+/** Canonical lowercase name when `name` is a quartet member; "" otherwise. */
 export function fingerprintToolKey(name) {
   const lower = String(name ?? "").trim().toLowerCase();
   return OPENCODE_FINGERPRINT_TOOLS.includes(lower) ? lower : "";
@@ -32,7 +67,7 @@ function toolNameOf(tool) {
 }
 
 /**
- * Canonicalise only fingerprint tools and remove duplicate declarations
+ * Canonicalise only the fingerprint quartet and remove duplicate quartet
  * variants. Non-fingerprint tools are preserved verbatim, including tools whose
  * names differ only by case; they are outside OpenCode's fingerprint contract.
  *
@@ -84,14 +119,14 @@ export function appendMissingFingerprintTools(tools, flat) {
     list.push(flat ? {
       type: "function",
       name,
-      description: "This tool is currently unavailable and must not be used.",
-      parameters: { type: "object", properties: {} },
+      description: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].description,
+      parameters: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].parameters,
     } : {
       type: "function",
       function: {
         name,
-        description: "This tool is currently unavailable and must not be used.",
-        parameters: { type: "object", properties: {} },
+        description: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].description,
+        parameters: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].parameters,
       },
     });
   }
