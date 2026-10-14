@@ -327,6 +327,7 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
 }
 
 function resolveOpencodeRequestId(body, credentials, sessionId) {
+  // v2 CLI sends no x-opencode-request; pass through only a canonical client id.
   const raw = credentials?.rawHeaders || {};
   for (const [key, value] of Object.entries(raw)) {
     if (key.toLowerCase() === "x-opencode-request") {
@@ -335,7 +336,7 @@ function resolveOpencodeRequestId(body, credentials, sessionId) {
       break;
     }
   }
-  return deriveRequestId(sessionId, body);
+  return null;
 }
 
 function normalizeResponsesTools(body) {
