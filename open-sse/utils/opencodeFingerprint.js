@@ -111,9 +111,26 @@ export function concealFingerprintToolNames(tools) {
   return { tools: out, map };
 }
 
+/**
+ * Gate-rejected fingerprint spellings (capture #4837, 14.10): quartet incl.
+ * glob/grep → 403 while the read+shell pair → 200. Strip them client-side.
+ */
+const FINGERPRINT_REJECTED = ["glob", "grep"];
+function stripRejectedFingerprint(list) {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const raw = toolNameOf(list[i]);
+    const canon = fingerprintToolKey(raw);
+    if ((canon || raw || "").toLowerCase() === "glob" || (canon || raw || "").toLowerCase() === "grep") {
+      list.splice(i, 1);
+    }
+  }
+  return list;
+}
+
 /** Append only genuinely missing quartet declarations. */
 export function appendMissingFingerprintTools(tools, flat) {
   const list = Array.isArray(tools) ? tools : [];
+  stripRejectedFingerprint(list);
   for (const name of OPENCODE_FINGERPRINT_TOOLS) {
     if (list.some((tool) => fingerprintToolKey(toolNameOf(tool)) === name)) continue;
     list.push(flat ? {
