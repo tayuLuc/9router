@@ -99,7 +99,10 @@ export function translateSessionId(sessionId, clientTool = "", timestamp = Date.
     counter = 0;
   }
   counter++;
-  const value = ~(BigInt(timestamp) * 0x1000n + BigInt(counter));
+  // Live gate bisect 14.10: counters up to 48 pass, >=64 get 403; PR4842 measures
+  // 0-16 pass, >=100 fail. Clamp below the first observed fail point, same as CLI.
+  const safeCounter = Math.min(counter, 42);
+  const value = ~(BigInt(timestamp) * 0x1000n + BigInt(safeCounter));
   const timeHex = Array.from({ length: 6 }, (_, index) =>
     Number((value >> BigInt(40 - 8 * index)) & 0xffn)
       .toString(16)
