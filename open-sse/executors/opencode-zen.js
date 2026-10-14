@@ -304,8 +304,9 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
     const downstreamUa = lower["user-agent"] || "";
     // Free-tier gate: spoof the official client UA.
     headers["User-Agent"] = hasValidOpencodeVersion(downstreamUa) ? downstreamUa : OPENCODE_UA;
-    headers["x-opencode-client"] = lower["x-opencode-client"] || "desktop";
+    headers["x-opencode-client"] = lower["x-opencode-client"] || "cli";
     headers["x-opencode-project"] = lower["x-opencode-project"] || "global";
+    if (lower["x-opencode-request"]) headers["x-opencode-request"] = lower["x-opencode-request"];
     headers["Authorization"] = credentials?.apiKey ? `Bearer ${credentials.apiKey}` : "Bearer public";
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
