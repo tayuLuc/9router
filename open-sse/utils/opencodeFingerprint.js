@@ -171,13 +171,9 @@ export function applyFingerprintTools(body, flat) {
   body.tools = appendMissingFingerprintTools(tools, flat);
   retargetToolChoice(body, map);
 
-  // Preserve the existing executor semantics. Responses uses auto when the
-  // fingerprint helper supplies tools; chat requests with no caller tools use
-  // none so the injected decoys cannot be selected.
-  if (!body.tool_choice) {
-    if (flat) body.tool_choice = "auto";
-    else if (!hadClientTools) body.tool_choice = "none";
-  }
+  // PR4840/v2 contract: free-tier chat rejects synthesized tool_choice; keep
+  // the caller's choice untouched and never invent "none"/"auto" ourselves.
+  if (flat && !body.tool_choice && !hadClientTools) body.tool_choice = "auto";
 
   recordRenamedToolNames(body, map);
   return map;

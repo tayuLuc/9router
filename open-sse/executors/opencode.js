@@ -490,7 +490,11 @@ export class OpenCodeExecutor extends BaseExecutor {
       // non-empty tool arrays; skipping cloaking here triggers 403 FreeTierError.
       applyFingerprintTools(body, true);
     } else if (body && typeof body === "object") {
+      const hadClientTools = Array.isArray(body.tools) && body.tools.length > 0;
       applyFingerprintTools(body, false);
+      // v2 contract / PR4840: never synthesize tool_choice:"none" for chat lane;
+      // keep client's explicit choice when present.
+      if (!hadClientTools) delete body.tool_choice;
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
