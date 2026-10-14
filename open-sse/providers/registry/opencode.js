@@ -16,6 +16,8 @@ export default {
     baseUrl: "https://opencode.ai",
     headers: {
       "x-opencode-client": "cli",
+      "x-session-affinity": "stable",
+      "x-session-id": "stable",
     },
     forceStream: true,
     noAuth: true,
