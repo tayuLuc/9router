@@ -138,7 +138,9 @@ export function concealFingerprintToolNames(tools) {
       seenQuartet.add(key);
       let alias = `${key}_client`;
       for (let i = 2; out.some((t) => toolNameOf(t) === alias); i += 1) alias = `${key}_client${i}`;
-      map.set(alias, current);
+      // PR4842 direction: alias -> canonical key, so a model call of `read`
+      // restores to the caller's original tool name on the response side.
+      map.set(alias, key);
       const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function)
         ? tool.function
         : null;
