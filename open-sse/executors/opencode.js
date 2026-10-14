@@ -6,7 +6,10 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
-import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
+import {
+  applyFingerprintTools,
+  OPENCODE_CANONICAL_TOOL_DEFINITIONS as FINGERPRINT_CANON,
+} from "../utils/opencodeFingerprint.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
@@ -361,6 +364,16 @@ function normalizeResponsesTools(body) {
     tool.name = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, MAX_TOOL_NAME_LEN);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    // The gate compares parameter schemas verbatim (round-10: extra props flip
+    // 200 to 403). A caller tool that exactly matches a canonical fingerprint
+    // definition keeps the canonical object instead of a re-serialized copy.
+    if (tool.name === "read" || tool.name === "shell") {
+      const def = FINGERPRINT_CANON[tool.name];
+      if (def && tool.description === def.description && JSON.stringify(tool.parameters) === JSON.stringify(def.parameters)) {
+        tool.description = def.description;
+        tool.parameters = def.parameters;
+      }
+    }
     validNames.add(tool.name);
     return true;
   });
