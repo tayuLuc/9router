@@ -20,11 +20,22 @@ export const OPENCODE_CANONICAL_TOOL_DEFINITIONS = {
         "path": {
           "type": "string",
           "description": "File or directory to read"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The line or directory entry to start reading from (1-based)"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The maximum number of lines or directory entries to read (defaults to and capped at 2000)"
         }
       },
       "required": [
         "path"
-      ]
+      ],
+      "additionalProperties": false
     }
   },
   "shell": {
