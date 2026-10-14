@@ -173,7 +173,7 @@ export function applyFingerprintTools(body, flat) {
 
   // PR4840/v2 contract: free-tier chat rejects synthesized tool_choice; keep
   // the caller's choice untouched and never invent "none"/"auto" ourselves.
-  if (flat && !body.tool_choice && !hadClientTools) body.tool_choice = "auto";
+  if (flat && !body.tool_choice) body.tool_choice = "auto";
 
   recordRenamedToolNames(body, map);
   return map;
