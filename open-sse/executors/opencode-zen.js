@@ -20,14 +20,19 @@ export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 // Free-tier fingerprint (mirrors opencode executor, PR #4132): upstream 403s
 // requests without the file-search quartet and without stream:true.
-const OPENCODE_FINGERPRINT_TOOLS = ["bash", "glob", "grep", "read"];
+import {
+  OPENCODE_FINGERPRINT_TOOLS,
+  OPENCODE_CANONICAL_TOOL_DEFINITIONS,
+} from "../utils/opencodeFingerprint.js";
 
 function hasValidOpencodeVersion(ua) {
-  const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
+  const str = String(ua || "");
+  if (!/opencode\/(?:latest|stable|preview|dev|\d+)/i.test(str)) return false;
+  const m = str.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
   if (!m) return false;
   const major = parseInt(m[1], 10);
   const minor = parseInt(m[2], 10);
-  return major > 1 || (major === 1 && minor >= 17);
+  return major >= 2 || (major === 1 && minor >= 17);
 }
 
 function unstableRandom() {
@@ -122,8 +127,8 @@ function ensureChatFingerprintTools(body) {
       type: "function",
       function: {
         name,
-        description: `OpenCode built-in ${name} tool`,
-        parameters: { type: "object", properties: {} },
+        description: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].description,
+        parameters: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].parameters,
       },
     });
     present.add(name);
@@ -146,8 +151,8 @@ function ensureResponsesFingerprintTools(body) {
     body.tools.push({
       type: "function",
       name,
-      description: `OpenCode built-in ${name} tool`,
-      parameters: { type: "object", properties: {} },
+      description: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].description,
+      parameters: OPENCODE_CANONICAL_TOOL_DEFINITIONS[name].parameters,
     });
     present.add(name);
   }
@@ -300,9 +305,14 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
     // Free-tier gate: spoof the official client UA.
     headers["User-Agent"] = hasValidOpencodeVersion(downstreamUa) ? downstreamUa : OPENCODE_UA;
     headers["x-opencode-client"] = lower["x-opencode-client"] || "desktop";
+    headers["x-opencode-project"] = lower["x-opencode-project"] || "global";
+    headers["Authorization"] = credentials?.apiKey ? `Bearer ${credentials.apiKey}` : "Bearer public";
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
       headers[SESSION_HEADER] = prepared;
+      headers["x-opencode-session-id"] = prepared;
+      headers["x-session-affinity"] = prepared;
+      headers["x-session-id"] = prepared;
       headers["x-opencode-session-id"] = prepared;
       headers["x-session-affinity"] = prepared;
       headers["x-session-id"] = prepared;
